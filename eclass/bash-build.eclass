@@ -18,31 +18,41 @@ inherit flag-o-matic toolchain-funcs multilib prefix
 # @DESCRIPTION:
 # This eclass contains unified code for building bash.
 
+# @ECLASS_VARIABLE: _BASH_BUILD_ALLOW_BASH_SOURCE_FULLPATH_DEFAULT
+# @DESCRIPTION:
+# Whether to allow the '--bash-source-fullpath-default' configure option of Bash to be enabled
+# through the bash-source-fullpath-default IUSE flag
+
+# @ECLASS_VARIABLE: _BASH_BUILD_ETC_VERSION
+# @DESCRIPTION:
+# Indicates the collective vesion of the bash-related files installed in /etc
+# This defaults to 0.
+
 # @ECLASS_VARIABLE: _BASH_BUILD_INSTALL_TYPE
 # @DESCRIPTION:
 # Indicates whether the installation type is 'system' or 'supplemental'
 # @REQUIRED
+
+# @ECLASS_VARIABLE: _BASH_BUILD_PATCH_OPTIONS
+# @DESCRIPTION:
+# Specifies the options for epatch
+
+# @ECLASS_VARIABLE: _BASH_BUILD_PATCHES
+# @DESCRIPTION:
+# Specifies the non-official patches
 
 # @ECLASS_VARIABLE: _BASH_BUILD_READLINE_VER
 # @DESCRIPTION:
 # Declares the required version of Readline.
 # This doesn't have to be specified in *9999* ebuilds.
 
-# @ECLASS_VARIABLE: _BASH_BUILD_PATCHES
+# @ECLASS_VARIABLE: _BASH_BUILD_REQUIRE_BISON
 # @DESCRIPTION:
-# Specifies the non-official patches
-
-# @ECLASS_VARIABLE: _BASH_BUILD_PATCH_OPTIONS
-# @DESCRIPTION:
-# Specifies the options for epatch
+# Whether to specify Bison as a build-time dependency or not
 
 # @ECLASS_VARIABLE: _BASH_BUILD_USE_ARCHIVED_PATCHES
 # @DESCRIPTION:
 # Whether to use patches from github.com/konsolebox/gentoo-bash-patches
-
-# @ECLASS_VARIABLE: _BASH_BUILD_REQUIRE_BISON
-# @DESCRIPTION:
-# Whether to specify Bison as a build-time dependency or not
 
 # @ECLASS_VARIABLE: _BASH_BUILD_VERIFY_SIG
 # @DESCRIPTION:
@@ -52,6 +62,25 @@ if [[ ${_BASH_BUILD_VERIFY_SIG-} == true ]]; then
 	VERIFY_SIG_OPENPGP_KEY_PATH=/usr/share/openpgp-keys/chetramey.asc
 	inherit verify-sig
 fi
+
+# @ECLASS_VARIABLE: _BASH_BUILD_SNAPSHOT_COMMIT
+# @DESCRIPTION:
+# If this vaiable is set, git commit snapshots from
+# https://git.savannah.gnu.org/cgit/bash.git/snapshot/ are used as sources instead.
+# The PV won't matter.
+
+# @ECLASS_VARIABLE: _BASH_BUILD_PATCH_COMMIT
+# @DESCRIPTION:
+# Commit version of old Bash patches uploaded in https://github.com/konsolebox/gentoo-bash-patches.
+# Only old versions of Bash need this.
+# @INTERNAL
+_BASH_BUILD_PATCH_COMMIT=693bbda26e14280fa11cfdbe8930f63355c00cc3
+
+# @ECLASS_VARIABLE: _BASH_BUILD_PLEVEL
+# @DESCRIPTION:
+# Bash's patch level
+# @INTERNAL
+_BASH_BUILD_PLEVEL=0
 
 # @ECLASS_VARIABLE: _BASH_BUILD_PV
 # @DESCRIPTION:
@@ -65,18 +94,10 @@ _BASH_BUILD_PV=${PV/_p*} _BASH_BUILD_PV=${_BASH_BUILD_PV//_/-}
 # @INTERNAL
 _BASH_BUILD_PV_PARTS=(${_BASH_BUILD_PV//[.-]/ })
 
-# @ECLASS_VARIABLE: _BASH_BUILD_PLEVEL
+# @ECLASS_VARIABLE: _BASH_BUILD_TARBALL
 # @DESCRIPTION:
-# Bash's patch level
+# Main source tarball file
 # @INTERNAL
-_BASH_BUILD_PLEVEL=0
-
-# @ECLASS_VARIABLE: _BASH_BUILD_PATCH_COMMIT
-# @DESCRIPTION:
-# Commit version of old Bash patches uploaded in https://github.com/konsolebox/gentoo-bash-patches.
-# Only old versions of Bash need this.
-# @INTERNAL
-_BASH_BUILD_PATCH_COMMIT=693bbda26e14280fa11cfdbe8930f63355c00cc3
 
 # @FUNCTION: _bash-build_get_patches
 # @USAGE: result_var, [-s]
@@ -122,8 +143,12 @@ _bash-build_set_globals() {
 	fi
 
 	IUSE="afs bundled-readline mem-scramble +net nls pgo +readline static vanilla"
+
+	if [[ ${_BASH_BUILD_ALLOW_BASH_SOURCE_FULLPATH_DEFAULT-} == true ]]; then
+		IUSE+=" bash-source-fullpath-default"
+	fi
+
 	[[ ${_BASH_BUILD_VERIFY_SIG-} == true ]] && IUSE+=" verify-sig"
-	[[ ${PV} == 99999 ]] && IUSE+=" bash-source-fullpath-default"
 
 	if [[ ${_BASH_BUILD_INSTALL_TYPE} == system ]]; then
 		SLOT=0
@@ -134,14 +159,33 @@ _bash-build_set_globals() {
 			die "System bash must at least be version 4.3."
 		fi
 	elif [[ ${_BASH_BUILD_INSTALL_TYPE} == supplemental ]]; then
-		SLOT=${PV/_p/.} SLOT=${SLOT//_/-}
+		if [[ ${PV} == *_alpha* || ${PV} == *_beta* || ${PV} == *_rc* ]]; then
+			SLOT=${PV/_p/-}
+		else
+			SLOT=${PV/_p/.}
+		fi
+
+		SLOT=${SLOT//_/-}
 	else
 		die "Invalid install type: ${_BASH_BUILD_INSTALL_TYPE}"
 	fi
 
 	local may_use_system_readline=false _patches
 
-	if [[ ${PV} == *9999* ]]; then
+	if [[ ${_BASH_BUILD_VERIFY_SIG-} == true ]]; then
+		if [[ ${_BASH_BUILD_SNAPSHOT_COMMIT+.} ]]; then
+			die "Verify-sig can't be enabled when _BASH_BUILD_SNAPSHOT_COMMIT is set."
+		elif [[ ${PV} == *9999* ]]; then
+			die "Verify-sig can't be enabled in *9999* versions."
+		fi
+	fi
+
+	if [[ ${_BASH_BUILD_SNAPSHOT_COMMIT+.} ]]; then
+		_BASH_BUILD_TARBALL=bash-${PV}-${_BASH_BUILD_SNAPSHOT_COMMIT}.tar.gz
+		SRC_URI="https://git.savannah.gnu.org/cgit/bash.git/snapshot/bash-${_BASH_BUILD_SNAPSHOT_COMMIT}.tar.gz ->
+				${_BASH_BUILD_TARBALL}"
+		S=${WORKDIR}/bash-${_BASH_BUILD_SNAPSHOT_COMMIT}
+	elif [[ ${PV} == *9999* ]]; then
 		EGIT_REPO_URI="https://git.savannah.gnu.org/git/bash.git"
 
 		if [[ ${PV} == 9999 ]]; then
@@ -151,15 +195,15 @@ _bash-build_set_globals() {
 		else
 			die "Invalid *9999* version"
 		fi
-
-		[[ ${_BASH_BUILD_VERIFY_SIG-} == true ]] && die "Verify-sig can't be enabled in *9999* versions"
 	elif [[ ${PV} == *_alpha* || ${PV} == *_beta* || ${PV} == *_rc* ]]; then
-		SRC_URI="mirror://gnu/bash/bash-${_BASH_BUILD_PV}.tar.gz ftp://ftp.cwru.edu/pub/bash/bash-${_BASH_BUILD_PV}.tar.gz"
+		_BASH_BUILD_TARBALL=bash-${_BASH_BUILD_PV}.tar.gz
+		SRC_URI="mirror://gnu/bash/${_BASH_BUILD_TARBALL} ftp://ftp.cwru.edu/pub/bash/${_BASH_BUILD_TARBALL}"
 		[[ ${_BASH_BUILD_VERIFY_SIG-} == true ]] && SRC_URI+=" verify-sig? ( ${SRC_URI//.gz/.gz.sig} )"
 		S=${WORKDIR}/bash-${_BASH_BUILD_PV}
 	else
+		_BASH_BUILD_TARBALL=bash-${_BASH_BUILD_PV}.tar.gz
 		[[ ${SLOT} == 0 ]] && may_use_system_readline=true
-		SRC_URI="mirror://gnu/bash/bash-${_BASH_BUILD_PV}.tar.gz"
+		SRC_URI="mirror://gnu/bash/${_BASH_BUILD_TARBALL}"
 		[[ ${_BASH_BUILD_VERIFY_SIG-} == true ]] && SRC_URI+=" verify-sig? ( ${SRC_URI}.sig )"
 		[[ ${PV} == *_p* ]] && _BASH_BUILD_PLEVEL=${PV##*_p}
 
@@ -172,8 +216,9 @@ _bash-build_set_globals() {
 		S=${WORKDIR}/bash-${_BASH_BUILD_PV}
 	fi
 
-	[[ ${#_BASH_BUILD_PATCHES[@]} -gt 0 && ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]] && \
+	if [[ ${#_BASH_BUILD_PATCHES[@]} -gt 0 && ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]]; then
 		SRC_URI+=" https://github.com/konsolebox/gentoo-bash-patches/archive/${_BASH_BUILD_PATCH_COMMIT}.tar.gz -> gentoo-bash-patches-${_BASH_BUILD_PATCH_COMMIT}.tar.gz"
+	fi
 
 	local static_readline_dep= non_static_readline_dep=
 
@@ -227,9 +272,7 @@ bash-build_pkg_setup() {
 # @DESCRIPTION:
 # Implements src_unpack
 bash-build_src_unpack() {
-	if [[ ${PV} == *9999* ]]; then
-		git-r3_src_unpack
-	else
+	if [[ ${_BASH_BUILD_TARBALL-} ]]; then
 		if [[ ${_BASH_BUILD_VERIFY_SIG-} == true ]] && use verify-sig; then
 			verify-sig_verify_detached "${DISTDIR}/bash-${_BASH_BUILD_PV}.tar.gz"{,.sig}
 
@@ -243,12 +286,15 @@ bash-build_src_unpack() {
 			fi
 		fi
 
-		unpack "bash-${_BASH_BUILD_PV}.tar.gz"
+		unpack "${_BASH_BUILD_TARBALL}"
+	else
+		git-r3_src_unpack
 	fi
 
-	[[ ${#_BASH_BUILD_PATCHES[@]} -gt 0 && ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]] && \
-		! use vanilla && \
-			unpack "gentoo-bash-patches-${_BASH_BUILD_PATCH_COMMIT}.tar.gz"
+	if [[ ${#_BASH_BUILD_PATCHES[@]} -gt 0 && ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]] &&
+			! use vanilla; then
+		unpack "gentoo-bash-patches-${_BASH_BUILD_PATCH_COMMIT}.tar.gz"
+	fi
 }
 
 # @FUNCTION: bash-build_src_prepare
@@ -279,8 +325,11 @@ bash-build_src_prepare() {
 
 	if [[ ${#_BASH_BUILD_PATCHES[@]} -gt 0 ]] && ! use vanilla; then
 		local prefix=${FILESDIR%/}/
-		[[ ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]] && \
+
+		if [[ ${_BASH_BUILD_USE_ARCHIVED_PATCHES-} == true ]]; then
 			prefix=${WORKDIR}/gentoo-bash-patches-${_BASH_BUILD_PATCH_COMMIT}/patches/
+		fi
+
 		eapply "${_BASH_BUILD_PATCH_OPTIONS[@]}" "${_BASH_BUILD_PATCHES[@]/#/${prefix}}"
 	fi
 
@@ -303,7 +352,7 @@ bash-build_src_prepare() {
 	# /var/tmp/portage/app-shells/bash-99999/image/usr/lib64/bash/pushd",
 	# and examing the contents of "pushd.temp" with "xargs -0" for example
 	# would show an instance of builtins/pushd.def" without bash-99999.
-	if use plugins; then
+	if [[ ${SLOT} == 0 ]] && use plugins; then
 		sed -i -e '/^OTHERPROG = /s| pushd||' examples/loadables/Makefile.in || die
 	fi
 
@@ -419,6 +468,19 @@ bash-build_src_compile() {
 	fi
 }
 
+# @FUNCTION: _bash-build_prefixed_newins
+# @USAGE: <file> <new_file> <raw_prefix>
+# @DESCRIPTION:
+# Applies EPREFIX to a file's content and does newins to it
+# @INTERNAL
+_bash-build_prefixed_newins() {
+	local file=$1 new_file=$2 raw_prefix=$3 MAPFILE=()
+
+	mapfile -t < "${file}" || die "Failed to read '${file}'"
+	newins - "${new_file}" < <(printf "${MAPFILE+%s\\n}" \
+			"${MAPFILE[@]//${raw_prefix}/${EPREFIX}${raw_prefix}}")
+}
+
 # @FUNCTION: bash-build_src_install
 # @DESCRIPTION:
 # Implements src_install
@@ -432,8 +494,19 @@ bash-build_src_install() {
 
 		insinto /etc/bash
 		doins "${FILESDIR}"/bash_logout
-		doins "$(prefixify_ro "${FILESDIR}"/bashrc)"
-		keepdir /etc/bash/bashrc.d
+
+		if [[ ${_BASH_BUILD_ETC_VERSION-0} == 1 ]]; then
+			_bash-build_prefixed_newins "${FILESDIR}"/bashrc-r1 bashrc /etc
+
+			insinto /etc/bash/bashrc.d
+			_bash-build_prefixed_newins "${FILESDIR}"/bashrc.d/10-gentoo-color.bash \
+					10-gentoo-color.bash /etc
+			newins "${FILESDIR}"/bashrc.d/10-gentoo-title-r1.bash 10-gentoo-title.bash
+			[[ ${EPREFIX} ]] || doins "${FILESDIR}"/bashrc.d/15-gentoo-bashrc-check.bash
+		else
+			_bash-build_prefixed_newins "${FILESDIR}"/bashrc bashrc /etc
+			keepdir /etc/bash/bashrc.d
+		fi
 
 		local f d
 		insinto /etc/skel
@@ -519,5 +592,5 @@ bash-build_pkg_postinst() {
 
 _bash-build_set_globals
 
-EXPORT_FUNCTIONS pkg_setup src_unpack src_prepare src_configure src_compile src_install \
-		src_test pkg_preinst pkg_postinst
+EXPORT_FUNCTIONS pkg_setup src_unpack src_prepare src_configure src_compile src_install src_test \
+		pkg_preinst pkg_postinst
