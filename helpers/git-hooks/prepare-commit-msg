@@ -67,11 +67,11 @@ function main {
 			prefix=${common_prefix##+([!/])/+([!/])}
 			prefix=${common_prefix:0:${#common_prefix} - ${#prefix}}
 			;;
-		eclass|eclass/*)
-			if [[ ${#files_to_commit[@]} -eq 1 ]]; then
-				prefix=${files_to_commit#eclass/}
-			else
+		eclass?(/*))
+			if [[ ${#files_to_commit[@]} -ne 1 ]]; then
 				prefix=${common_prefix}
+			elif [[ -z ${first_message_index} || ${content[first_message_index]} != Add\ *.eclass ]]; then
+				prefix=${files_to_commit#eclass/}
 			fi
 			;;
 		esac
