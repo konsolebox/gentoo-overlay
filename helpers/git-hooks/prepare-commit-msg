@@ -32,6 +32,10 @@ function main {
 
 	[[ ${type} == merge || ${type} == commit && ${object_id} ]] && return
 
+	for __ in CHERRY_PICK_HEAD rebase-merge/message-{current-fixups,fixup,squash}; do
+		[[ -e .git/$__ ]] && return
+	done
+
 	local PREFIX_PATTERN='+([![:blank:]]):*'
 
 	readarray -t content < "${commit_msg_file}" || exit
