@@ -119,7 +119,7 @@ function main {
 			fi
 		done
 
-		[[ ${#warning[@]} -gt 0 ]] && content+=("${warning[@]}")
+		[[ ${warning+.} ]] && content+=("" "${warning[@]}")
 		contents_changed=true
 	fi
 
