@@ -685,7 +685,7 @@ git-r3_fetch() {
 		umask "${EVCS_UMASK}" || die "Bad options to umask: ${EVCS_UMASK}"
 	fi
 	for r in "${repos[@]}"; do
-		if [[ ! ${EVCS_OFFLINE} && :1:yes:true: != *:"${no_fetch}":* ]]; then
+		if [[ ! ${EVCS_OFFLINE} && ! ${no_fetch} ]]; then
 			einfo "Fetching ${r} ..."
 
 			local fetch_command=( git fetch "${r}" )
@@ -880,7 +880,7 @@ git-r3_fetch() {
 	local EGIT_CLONE_TYPE=mirror
 
 	# recursively fetch submodules
-	if [[ :1:yes:true: != *:"${no_fetch_submodules}":* ]] && \
+	if [[ ! ${no_fetch_submodules} ]] && \
 			git cat-file -e "${local_ref}":.gitmodules &>/dev/null; then
 		local submodules
 		_git-r3_set_submodules "${_GIT_SUBMODULE_PATH}" \
